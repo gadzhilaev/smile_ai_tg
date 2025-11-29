@@ -1,0 +1,42 @@
+# Виртуальное окружение
+venv/
+env/
+ENV/
+
+# Переменные окружения
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Логи
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# База данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Загруженные файлы
+uploads/
+*.p8
+*.p12
+
+# Временные файлы
+*.tmp
+*.temp
+
