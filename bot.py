@@ -19,7 +19,7 @@ class TelegramBot:
         self.group_chat_id = GROUP_CHAT_ID
         
     def send_message_to_group(self, user_id: str, user_name: str, message_text: str, 
-                             photo_path: Optional[str] = None) -> Optional[Dict]:
+                              photo_path: Optional[str] = None) -> Optional[Dict]:
         """
         Отправляет сообщение от пользователя в группу поддержки.
         

@@ -98,7 +98,7 @@ def process_telegram_updates():
                                 )
                                 
                                 logger.info(f"Ответ отправлен пользователю {user_id}: {reply_text}")
-                                logger.info(f"Push уведомления: FCM={results['fcm_sent']}, APNs={results['apns_sent']}")
+                                logger.info(f"Push уведомления: отправлено={results['sent']}, ошибок={results['failed']}")
                         else:
                             logger.warning(f"Не найден user_id для message_id {replied_message_id}")
             
@@ -226,9 +226,8 @@ def register_device():
     JSON формат:
     {
         "user_id": "123456789",
+        "fcm_token": "...",
         "platform": "android" или "ios",
-        "fcm_token": "..." (для Android),
-        "apns_token": "..." (для iOS),
         "device_id": "..." (опционально)
     }
     """
@@ -239,30 +238,21 @@ def register_device():
             return jsonify({"error": "Отсутствуют данные"}), 400
         
         user_id = data.get("user_id")
-        platform = data.get("platform")
+        fcm_token = data.get("fcm_token")
+        platform = data.get("platform", "android")
+        device_id = data.get("device_id", "")
         
-        if not user_id or not platform:
-            return jsonify({"error": "Отсутствуют обязательные поля: user_id или platform"}), 400
+        if not user_id or not fcm_token:
+            return jsonify({"error": "Отсутствуют обязательные поля: user_id или fcm_token"}), 400
         
         if platform not in ["android", "ios"]:
             return jsonify({"error": "platform должен быть 'android' или 'ios'"}), 400
         
-        fcm_token = data.get("fcm_token") if platform == "android" else None
-        apns_token = data.get("apns_token") if platform == "ios" else None
-        device_id = data.get("device_id", "")
-        
-        if platform == "android" and not fcm_token:
-            return jsonify({"error": "fcm_token обязателен для Android"}), 400
-        
-        if platform == "ios" and not apns_token:
-            return jsonify({"error": "apns_token обязателен для iOS"}), 400
-        
         # Сохраняем токен
         db.save_device_token(
             user_id=user_id,
-            platform=platform,
             fcm_token=fcm_token,
-            apns_token=apns_token,
+            platform=platform,
             device_id=device_id
         )
         
@@ -310,3 +300,4 @@ if __name__ == '__main__':
     logger.info(f"Сервер запущен на {SERVER_HOST}:{SERVER_PORT}")
     logger.info("Бот и сервер работают одновременно")
     app.run(host=SERVER_HOST, port=SERVER_PORT, debug=False)
+

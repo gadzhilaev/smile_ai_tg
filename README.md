@@ -7,7 +7,7 @@
 1. **Прием сообщений от мобильного приложения** - сервер принимает HTTP запросы с сообщениями и фото
 2. **Отправка в группу** - сообщения автоматически пересылаются в указанную группу Telegram с форматированием
 3. **Поддержка фотографий** - возможность отправлять и получать фото в переписке
-4. **Push уведомления** - при ответе в группе пользователь получает push уведомление (FCM для Android, APNs для iOS)
+4. **Push уведомления** - при ответе в группе пользователь получает push уведомление (FCM для Android и iOS)
 5. **История переписок** - все сообщения сохраняются в базе данных и доступны через API
 6. **Обработка ответов** - когда в группе делают reply на сообщение, ответ автоматически отправляется пользователю через push
 
@@ -37,28 +37,6 @@
    - Настройте FCM и APNs для push уведомлений (см. раздел ниже)
    - Заполните все поля в `.env`
 
-## Настройка Push уведомлений
-
-### Android (FCM)
-
-1. Создайте проект в [Firebase Console](https://console.firebase.google.com/)
-2. Добавьте Android приложение в проект
-3. Скачайте `google-services.json` и добавьте в проект
-4. В Firebase Console перейдите в **Project Settings** → **Cloud Messaging**
-5. Скопируйте **Server key** и вставьте в `.env` как `FCM_SERVER_KEY`
-
-### iOS (APNs)
-
-1. В [Apple Developer Portal](https://developer.apple.com/) создайте APNs ключ:
-   - Certificates, Identifiers & Profiles → Keys → Create a key
-   - Включите "Apple Push Notifications service (APNs)"
-   - Скачайте `.p8` файл (сохраните Key ID)
-2. Заполните в `.env`:
-   - `APNS_KEY_ID` - Key ID из Apple Developer Portal
-   - `APNS_TEAM_ID` - Team ID (находится в правом верхнем углу)
-   - `APNS_BUNDLE_ID` - Bundle ID вашего приложения (например, `com.company.app`)
-   - `APNS_KEY_PATH` - путь к скачанному `.p8` файлу
-
 ## Как получить ID группы
 
 ### Способ 1: Через getUpdates
@@ -70,15 +48,29 @@
    ```
 4. Найдите в ответе `"chat":{"id":-123456789}` - это и есть `GROUP_CHAT_ID`
 
-### Способ 2: Через скрипт
+### Способ 2: Через бота @userinfobot
+1. Добавьте @userinfobot в группу
+2. Отправьте команду `/start`
+3. Бот покажет ID группы
+
+### Способ 3: Через скрипт
 ```bash
 python get_group_id.py
 ```
 
-### Способ 3: Через бота @userinfobot
-1. Добавьте @userinfobot в группу
-2. Отправьте команду `/start`
-3. Бот покажет ID группы
+## Настройка Push уведомлений
+
+### Firebase Cloud Messaging (FCM)
+
+FCM работает для Android и iOS через единый API.
+
+1. Создайте проект в [Firebase Console](https://console.firebase.google.com/)
+2. Добавьте Android приложение в проект
+3. Добавьте iOS приложение в проект
+4. В Firebase Console перейдите в **Project Settings** → **Cloud Messaging**
+5. Скопируйте **Server key** и вставьте в `.env` как `FCM_SERVER_KEY`
+
+Подробная инструкция по интеграции в Flutter приложение находится в [FLUTTER_GUIDE.md](FLUTTER_GUIDE.md)
 
 ## Запуск
 
@@ -100,7 +92,7 @@ python get_group_id.py
 
 ## API
 
-Подробная документация API для мобильного приложения находится в файле [MOBILE_API.md](MOBILE_API.md)
+Подробная документация API для мобильного приложения находится в файле [FLUTTER_GUIDE.md](FLUTTER_GUIDE.md)
 
 ### Основные endpoints:
 
@@ -108,6 +100,71 @@ python get_group_id.py
 - **POST** `/register_device` - Регистрация токена для push уведомлений
 - **GET** `/message_history/<user_id>` - Получение истории переписки
 - **GET** `/health` - Проверка работоспособности
+
+### Отправка сообщения
+
+**Endpoint:** `POST /send_message`
+
+Поддерживает два формата:
+
+**1. Multipart/form-data (для загрузки фото):**
+```
+user_id: "123456789"
+user_name: "Имя пользователя" (опционально)
+message: "Текст сообщения"
+photo: [файл изображения] (опционально)
+```
+
+**2. JSON (без фото или с photo_url):**
+```json
+{
+    "user_id": "123456789",
+    "user_name": "Имя пользователя",
+    "message": "Текст сообщения",
+    "photo_url": "https://..." (опционально)
+}
+```
+
+**Ответ (успех):**
+```json
+{
+    "success": true,
+    "message_id": 12345,
+    "photo_url": "/uploads/uuid_filename.jpg" (если было фото)
+}
+```
+
+### Регистрация устройства для push уведомлений
+
+**Endpoint:** `POST /register_device`
+
+```json
+{
+    "user_id": "123456789",
+    "fcm_token": "токен от Firebase",
+    "platform": "android" или "ios",
+    "device_id": "device_123" (опционально)
+}
+```
+
+### Получение истории переписки
+
+**Endpoint:** `GET /message_history/<user_id>?limit=50`
+
+**Ответ:**
+```json
+{
+    "success": true,
+    "messages": [
+        {
+            "message": "Текст сообщения",
+            "photo_url": "/uploads/photo.jpg" или null,
+            "direction": "user" или "support",
+            "created_at": "2024-01-01 12:00:00"
+        }
+    ]
+}
+```
 
 ## Как это работает
 
@@ -126,7 +183,7 @@ python get_group_id.py
 
 4. **Пользователь получает push уведомление:**
    - Сервер находит токены устройства пользователя
-   - Отправляет push через FCM (Android) или APNs (iOS)
+   - Отправляет push через FCM (Android и iOS)
    - Сохраняет ответ в историю переписки
 
 5. **Пользователь открывает уведомление:**
@@ -150,7 +207,7 @@ smile_ai_tg/
 ├── .env                      # Настройки (создается вручную)
 ├── .env.example              # Пример файла настроек
 ├── README.md                 # Документация
-└── MOBILE_API.md             # API документация для мобильного приложения
+└── FLUTTER_GUIDE.md          # API документация для мобильного приложения
 ```
 
 ## Настройки
@@ -167,11 +224,7 @@ smile_ai_tg/
 - `API_SECRET_KEY` - секретный ключ (для будущего использования)
 
 ### Push уведомления:
-- `FCM_SERVER_KEY` - Server key из Firebase Console (для Android)
-- `APNS_KEY_ID` - Key ID из Apple Developer Portal (для iOS)
-- `APNS_TEAM_ID` - Team ID из Apple Developer Portal (для iOS)
-- `APNS_BUNDLE_ID` - Bundle ID приложения (для iOS)
-- `APNS_KEY_PATH` - путь к .p8 файлу (для iOS)
+- `FCM_SERVER_KEY` - Server key из Firebase Console (для Android и iOS)
 
 ### Файлы:
 - `UPLOAD_FOLDER` - директория для загрузки файлов (по умолчанию `uploads`)
@@ -189,7 +242,6 @@ smile_ai_tg/
 ## Безопасность
 
 - Не коммитьте файл `.env` в git (он уже в `.gitignore`)
-- Не коммитьте `.p8` файлы с приватными ключами
 - Для продакшена рекомендуется:
   - Добавить аутентификацию для API
   - Использовать HTTPS для защиты данных в транзите
@@ -206,9 +258,8 @@ smile_ai_tg/
 
 **Push уведомления не приходят:**
 - Проверьте, что токен устройства зарегистрирован (`POST /register_device`)
-- Убедитесь, что FCM_SERVER_KEY или APNs настройки правильные
+- Убедитесь, что FCM_SERVER_KEY правильный
 - Проверьте логи сервера на наличие ошибок
-- Для iOS убедитесь, что `.p8` файл доступен по указанному пути
 
 **Фото не загружаются:**
 - Проверьте, что директория `uploads` существует и доступна для записи
@@ -219,8 +270,4 @@ smile_ai_tg/
 - Проверьте, что виртуальное окружение активировано
 - Убедитесь, что все зависимости установлены
 - Проверьте, что порт не занят другим процессом
-- Проверьте логи на наличие ошибок
 
-## Документация для разработчиков мобильных приложений
-
-См. [MOBILE_API.md](MOBILE_API.md) для подробной документации API с примерами кода для Android и iOS.

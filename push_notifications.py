@@ -1,187 +1,127 @@
 """
-Модуль для отправки push уведомлений через FCM и APNs.
+Модуль для отправки push уведомлений через Firebase Cloud Messaging (FCM).
+Поддерживает как Android, так и iOS через единый FCM API.
 """
 import requests
 import logging
-from typing import Optional, Dict
-from config import FCM_SERVER_KEY, APNS_KEY_ID, APNS_TEAM_ID, APNS_BUNDLE_ID, APNS_KEY_PATH
+from typing import List, Dict
+from config import FCM_SERVER_KEY
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class PushNotificationService:
-    """Класс для отправки push уведомлений"""
+    """Класс для отправки push уведомлений через FCM"""
     
     def __init__(self):
-        self.fcm_server_key = FCM_SERVER_KEY
-        self.apns_key_id = APNS_KEY_ID
-        self.apns_team_id = APNS_TEAM_ID
-        self.apns_bundle_id = APNS_BUNDLE_ID
-        self.apns_key_path = APNS_KEY_PATH
+        self.fcm_url = "https://fcm.googleapis.com/fcm/send"
+        self.server_key = FCM_SERVER_KEY
+        
+        if not self.server_key:
+            logger.warning("FCM_SERVER_KEY не установлен. Push уведомления не будут работать.")
     
-    def send_fcm_notification(self, token: str, title: str, body: str, 
-                             data: Optional[Dict] = None) -> bool:
+    def send_notification(self, tokens: List[str], title: str, body: str, 
+                         data: Dict = None) -> Dict:
         """
-        Отправляет push уведомление через FCM (Android)
+        Отправляет push уведомление на устройства.
         
         Args:
-            token: FCM токен устройства
+            tokens: Список FCM токенов устройств
             title: Заголовок уведомления
             body: Текст уведомления
             data: Дополнительные данные для уведомления
             
         Returns:
-            True если успешно, False в случае ошибки
+            Dict с результатами отправки
         """
-        if not self.fcm_server_key:
-            logger.warning("FCM_SERVER_KEY не установлен")
-            return False
+        if not self.server_key:
+            logger.error("FCM_SERVER_KEY не установлен")
+            return {"success": False, "error": "FCM_SERVER_KEY не установлен"}
         
-        url = "https://fcm.googleapis.com/fcm/send"
+        if not tokens:
+            logger.warning("Список токенов пуст")
+            return {"success": False, "error": "Нет токенов для отправки"}
         
         headers = {
-            "Authorization": f"key={self.fcm_server_key}",
+            "Authorization": f"key={self.server_key}",
             "Content-Type": "application/json"
         }
         
-        payload = {
-            "to": token,
-            "notification": {
-                "title": title,
-                "body": body,
-                "sound": "default"
-            },
-            "data": data or {},
-            "priority": "high"
+        results = {
+            "success": True,
+            "sent": 0,
+            "failed": 0,
+            "errors": []
         }
         
-        try:
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
-            response.raise_for_status()
-            result = response.json()
-            
-            if result.get("success") == 1:
-                logger.info(f"FCM уведомление отправлено: {token}")
-                return True
-            else:
-                logger.error(f"Ошибка отправки FCM: {result}")
-                return False
-                
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Ошибка при отправке FCM уведомления: {e}")
-            return False
-    
-    def send_apns_notification(self, token: str, title: str, body: str,
-                              data: Optional[Dict] = None) -> bool:
-        """
-        Отправляет push уведомление через APNs (iOS)
-        
-        Args:
-            token: APNs токен устройства
-            title: Заголовок уведомления
-            body: Текст уведомления
-            data: Дополнительные данные для уведомления
-            
-        Returns:
-            True если успешно, False в случае ошибки
-        """
-        if not all([self.apns_key_id, self.apns_team_id, self.apns_bundle_id, self.apns_key_path]):
-            logger.warning("APNs настройки не полностью установлены")
-            return False
-        
-        try:
-            import jwt
-            import time
-            
-            # Генерируем JWT токен для APNs
-            headers_jwt = {
-                "alg": "ES256",
-                "kid": self.apns_key_id
-            }
-            
-            payload_jwt = {
-                "iss": self.apns_team_id,
-                "iat": int(time.time())
-            }
-            
-            # Читаем приватный ключ
-            with open(self.apns_key_path, 'r') as f:
-                private_key = f.read()
-            
-            # Создаем JWT
-            token_jwt = jwt.encode(payload_jwt, private_key, algorithm="ES256", headers=headers_jwt)
-            # PyJWT 2.x возвращает строку, не bytes
-            if isinstance(token_jwt, bytes):
-                token_jwt = token_jwt.decode('utf-8')
-            
-            # URL для APNs (production или sandbox)
-            apns_url = f"https://api.push.apple.com/3/device/{token}"
-            
-            headers = {
-                "authorization": f"bearer {token_jwt}",
-                "apns-topic": self.apns_bundle_id,
-                "apns-priority": "10",
-                "apns-push-type": "alert"
-            }
-            
-            payload = {
-                "aps": {
-                    "alert": {
+        # Отправляем на каждое устройство отдельно
+        for token in tokens:
+            try:
+                payload = {
+                    "to": token,
+                    "notification": {
                         "title": title,
-                        "body": body
+                        "body": body,
+                        "sound": "default"
                     },
-                    "sound": "default",
-                    "badge": 1
+                    "data": data or {},
+                    "priority": "high"
                 }
-            }
-            
-            # Добавляем кастомные данные
-            if data:
-                for key, value in data.items():
-                    payload[key] = value
-            
-            response = requests.post(apns_url, json=payload, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                logger.info(f"APNs уведомление отправлено: {token}")
-                return True
-            else:
-                logger.error(f"Ошибка отправки APNs: {response.status_code} - {response.text}")
-                return False
                 
-        except ImportError:
-            logger.error("Библиотека PyJWT не установлена для APNs")
-            return False
-        except Exception as e:
-            logger.error(f"Ошибка при отправке APNs уведомления: {e}")
-            return False
-    
-    def send_notification(self, tokens: Dict[str, list], title: str, body: str,
-                         data: Optional[Dict] = None) -> Dict[str, int]:
-        """
-        Отправляет уведомления на все устройства пользователя
+                response = requests.post(
+                    self.fcm_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=10
+                )
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                if result.get("success") == 1:
+                    results["sent"] += 1
+                    logger.info(f"Push уведомление отправлено на устройство {token[:20]}...")
+                else:
+                    results["failed"] += 1
+                    error_msg = result.get("results", [{}])[0].get("error", "Unknown error")
+                    results["errors"].append(f"Token {token[:20]}...: {error_msg}")
+                    logger.error(f"Ошибка отправки push на {token[:20]}...: {error_msg}")
+                    
+                    # Если токен недействителен, можно удалить его из базы
+                    if error_msg in ["InvalidRegistration", "NotRegistered"]:
+                        logger.warning(f"Токен {token[:20]}... недействителен и должен быть удален")
+                
+            except requests.exceptions.RequestException as e:
+                results["failed"] += 1
+                results["errors"].append(f"Token {token[:20]}...: {str(e)}")
+                logger.error(f"Ошибка при отправке push на {token[:20]}...: {e}")
         
-        Args:
-            tokens: Словарь с токенами {'fcm': [...], 'apns': [...]}
-            title: Заголовок уведомления
-            body: Текст уведомления
-            data: Дополнительные данные
-            
-        Returns:
-            Словарь с результатами: {'fcm_sent': 0, 'apns_sent': 0}
-        """
-        results = {"fcm_sent": 0, "apns_sent": 0}
-        
-        # Отправляем FCM уведомления
-        for fcm_token in tokens.get("fcm", []):
-            if self.send_fcm_notification(fcm_token, title, body, data):
-                results["fcm_sent"] += 1
-        
-        # Отправляем APNs уведомления
-        for apns_token in tokens.get("apns", []):
-            if self.send_apns_notification(apns_token, title, body, data):
-                results["apns_sent"] += 1
+        if results["failed"] > 0:
+            results["success"] = False
         
         return results
+    
+    def send_support_reply_notification(self, tokens: List[str], message: str, user_id: str):
+        """
+        Отправляет уведомление о ответе от поддержки.
+        
+        Args:
+            tokens: Список FCM токенов устройств
+            message: Текст ответа от поддержки
+            user_id: ID пользователя
+        """
+        data = {
+            "type": "support_reply",
+            "user_id": user_id,
+            "message": message,
+            "click_action": "FLUTTER_NOTIFICATION_CLICK"
+        }
+        
+        return self.send_notification(
+            tokens=tokens,
+            title="Ответ от поддержки",
+            body=message,
+            data=data
+        )
 
