@@ -40,11 +40,6 @@ SERVER_HOST=0.0.0.0
 FCM_SERVICE_ACCOUNT_PATH=firebase-service-account.json
 ```
 
-5. Получите `firebase-service-account.json`:
-   - Firebase Console → Project Settings → Service Accounts
-   - Generate New Private Key
-   - Сохраните как `firebase-service-account.json` в корне проекта
-
 ## Запуск
 
 ```bash
@@ -256,15 +251,23 @@ async fn connect_support_websocket(user_id: &str) {
 
 ```
 smile_ai_tg/
-├── server.py              # Flask сервер
-├── bot.py                 # Telegram Bot API
-├── database.py            # SQLite база данных
-├── push_notifications.py  # FCM push уведомления
-├── config.py             # Конфигурация
-├── requirements.txt      # Зависимости
-├── .env                  # Настройки
-└── uploads/              # Загруженные файлы
+├── server.py                      # Flask сервер
+├── bot.py                         # Telegram Bot API
+├── database.py                    # SQLite база данных
+├── push_notifications.py          # FCM push уведомления
+├── config.py                      # Конфигурация
+├── requirements.txt               # Зависимости
+├── .env                           # Настройки (не в git)
+├── firebase-service-account.json # Firebase ключ (не в git)
+├── get_group_id.py               # Утилита для получения ID группы
+├── uploads/                       # Загруженные файлы
+└── support_bot.db                 # База данных (создается автоматически)
 ```
+
+**Важные файлы:**
+- `.env` - настройки сервера (создается из `.env.example`)
+- `firebase-service-account.json` - ключ Firebase для push уведомлений (получается из Firebase Console)
+- Оба файла в `.gitignore` и не должны попадать в репозиторий
 
 ## База данных
 
@@ -283,7 +286,7 @@ SQLite база `support_bot.db` с таблицами:
 
 ## Безопасность
 
-- Не коммитьте `.env` и `firebase-service-account.json`
+- Не коммитьте `.env`
 - Для продакшена используйте HTTPS
 - Добавьте аутентификацию для API
 - Настройте rate limiting
@@ -295,9 +298,11 @@ SQLite база `support_bot.db` с таблицами:
 - Убедитесь, что бот добавлен в группу
 
 **Push не работают:**
-- Проверьте `firebase-service-account.json`
-- Убедитесь, что устройство зарегистрировано
-- Проверьте логи сервера
+- Проверьте наличие файла `firebase-service-account.json` в корне проекта
+- Проверьте, что путь в `.env` правильный: `FCM_SERVICE_ACCOUNT_PATH=firebase-service-account.json`
+- Убедитесь, что устройство зарегистрировано через `/register_device`
+- Проверьте логи сервера при запуске (должно быть сообщение об инициализации Firebase)
+- Используйте `/check_device/<user_id>` для проверки регистрации устройства
 
 **Фото не загружаются:**
 - Проверьте права на директорию `uploads/`
