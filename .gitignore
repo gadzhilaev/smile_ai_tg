@@ -34,3 +34,9 @@ Thumbs.db
 # Загруженные файлы
 uploads/
 
+# Firebase Service Account (секретный ключ)
+firebase-service-account.json
+*.json
+!package.json
+!tsconfig.json
+

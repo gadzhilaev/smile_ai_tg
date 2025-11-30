@@ -1,273 +1,304 @@
-# Telegram Bot для поддержки
+# Telegram Support Bot Server
 
-Полнофункциональный бот для обработки сообщений от мобильного приложения и пересылки их в группу поддержки Telegram с поддержкой фото, push уведомлений и истории переписок.
+Сервер для обработки сообщений поддержки через Telegram бота. Принимает запросы от мобильного приложения, пересылает их в Telegram группу и отправляет push уведомления при ответах.
 
 ## Функционал
 
-1. **Прием сообщений от мобильного приложения** - сервер принимает HTTP запросы с сообщениями и фото
-2. **Отправка в группу** - сообщения автоматически пересылаются в указанную группу Telegram с форматированием
-3. **Поддержка фотографий** - возможность отправлять и получать фото в переписке
-4. **Push уведомления** - при ответе в группе пользователь получает push уведомление (FCM для Android и iOS)
-5. **История переписок** - все сообщения сохраняются в базе данных и доступны через API
-6. **Обработка ответов** - когда в группе делают reply на сообщение, ответ автоматически отправляется пользователю через push
+- Прием сообщений и фото от мобильного приложения
+- Отправка сообщений в Telegram группу
+- Push уведомления через Firebase Cloud Messaging (FCM)
+- История переписок в SQLite
+- WebSocket для обновления чата в реальном времени
+- Автоматическое приветственное сообщение (раз в день)
 
 ## Установка
 
-1. **Активируйте виртуальное окружение:**
-   ```bash
-   source venv/bin/activate  # для macOS/Linux
-   # или
-   venv\Scripts\activate  # для Windows
-   ```
-
-2. **Установите зависимости:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Создайте файл `.env` на основе `.env.example`:**
-   ```bash
-   cp .env.example .env
-   ```
-
-4. **Настройте `.env` файл:**
-   - Получите токен бота у [@BotFather](https://t.me/BotFather) в Telegram
-   - Добавьте бота в группу поддержки
-   - Получите ID группы (см. инструкцию ниже)
-   - Настройте FCM и APNs для push уведомлений (см. раздел ниже)
-   - Заполните все поля в `.env`
-
-## Как получить ID группы
-
-### Способ 1: Через getUpdates
-1. Добавьте бота в группу
-2. Отправьте любое сообщение в группу
-3. Откройте в браузере:
-   ```
-   https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
-   ```
-4. Найдите в ответе `"chat":{"id":-123456789}` - это и есть `GROUP_CHAT_ID`
-
-### Способ 2: Через бота @userinfobot
-1. Добавьте @userinfobot в группу
-2. Отправьте команду `/start`
-3. Бот покажет ID группы
-
-### Способ 3: Через скрипт
+1. Создайте виртуальное окружение:
 ```bash
-python get_group_id.py
+python3 -m venv venv
+source venv/bin/activate  # macOS/Linux
+# или
+venv\Scripts\activate  # Windows
 ```
 
-## Настройка Push уведомлений
+2. Установите зависимости:
+```bash
+pip install -r requirements.txt
+```
 
-### Firebase Cloud Messaging (FCM)
+3. Создайте файл `.env`:
+```bash
+cp .env.example .env
+```
 
-FCM работает для Android и iOS через единый API.
+4. Настройте `.env`:
+```
+BOT_TOKEN=your_telegram_bot_token
+GROUP_CHAT_ID=your_group_chat_id
+SERVER_PORT=5000
+SERVER_HOST=0.0.0.0
+FCM_SERVICE_ACCOUNT_PATH=firebase-service-account.json
+```
 
-1. Создайте проект в [Firebase Console](https://console.firebase.google.com/)
-2. Добавьте Android приложение в проект
-3. Добавьте iOS приложение в проект
-4. В Firebase Console перейдите в **Project Settings** → **Cloud Messaging**
-5. Скопируйте **Server key** и вставьте в `.env` как `FCM_SERVER_KEY`
-
-Подробная инструкция по интеграции в Flutter приложение находится в [FLUTTER_GUIDE.md](FLUTTER_GUIDE.md)
+5. Получите `firebase-service-account.json`:
+   - Firebase Console → Project Settings → Service Accounts
+   - Generate New Private Key
+   - Сохраните как `firebase-service-account.json` в корне проекта
 
 ## Запуск
 
-1. **Активируйте виртуальное окружение:**
-   ```bash
-   source venv/bin/activate
-   ```
-
-2. **Запустите сервер:**
-   ```bash
-   python server.py
-   ```
-
-Сервер запустится на `http://0.0.0.0:5000` (или на порту, указанном в `.env`)
-
-**Важно:** При запуске одновременно запускаются:
-- Flask сервер для приема запросов от мобильного приложения
-- Фоновый процесс для обработки обновлений от Telegram
-
-## API
-
-Подробная документация API для мобильного приложения находится в файле [FLUTTER_GUIDE.md](FLUTTER_GUIDE.md)
-
-### Основные endpoints:
-
-- **POST** `/send_message` - Отправка сообщения (с поддержкой фото)
-- **POST** `/register_device` - Регистрация токена для push уведомлений
-- **GET** `/message_history/<user_id>` - Получение истории переписки
-- **GET** `/health` - Проверка работоспособности
-
-### Отправка сообщения
-
-**Endpoint:** `POST /send_message`
-
-Поддерживает два формата:
-
-**1. Multipart/form-data (для загрузки фото):**
-```
-user_id: "123456789"
-user_name: "Имя пользователя" (опционально)
-message: "Текст сообщения"
-photo: [файл изображения] (опционально)
+```bash
+source venv/bin/activate
+python server.py
 ```
 
-**2. JSON (без фото или с photo_url):**
+Сервер запустится на `http://0.0.0.0:5000`
+
+## API Endpoints
+
+### POST /send_message
+Отправка сообщения с поддержкой фото.
+
+**Multipart/form-data:**
+- `user_id` (обязательно)
+- `message` (обязательно)
+- `user_name` (опционально)
+- `photo` (опционально, можно несколько)
+
+**JSON:**
 ```json
 {
-    "user_id": "123456789",
-    "user_name": "Имя пользователя",
-    "message": "Текст сообщения",
-    "photo_url": "https://..." (опционально)
+  "user_id": "123456789",
+  "user_name": "Имя",
+  "message": "Текст",
+  "photo_url": "https://..." 
 }
 ```
-
-**Ответ (успех):**
-```json
-{
-    "success": true,
-    "message_id": 12345,
-    "photo_url": "/uploads/uuid_filename.jpg" (если было фото)
-}
-```
-
-### Регистрация устройства для push уведомлений
-
-**Endpoint:** `POST /register_device`
-
-```json
-{
-    "user_id": "123456789",
-    "fcm_token": "токен от Firebase",
-    "platform": "android" или "ios",
-    "device_id": "device_123" (опционально)
-}
-```
-
-### Получение истории переписки
-
-**Endpoint:** `GET /message_history/<user_id>?limit=50`
 
 **Ответ:**
 ```json
 {
-    "success": true,
-    "messages": [
-        {
-            "message": "Текст сообщения",
-            "photo_url": "/uploads/photo.jpg" или null,
-            "direction": "user" или "support",
-            "created_at": "2024-01-01 12:00:00"
-        }
-    ]
+  "success": true,
+  "message_id": 12345,
+  "photo_url": "/uploads/file.jpg",
+  "photo_count": 1
 }
 ```
 
-## Как это работает
+### POST /register_device
+Регистрация FCM токена устройства.
 
-1. **Мобильное приложение отправляет сообщение:**
-   - POST запрос на `/send_message` с текстом и/или фото
-   - Сервер сохраняет сообщение в базу данных
+**JSON:**
+```json
+{
+  "user_id": "123456789",
+  "fcm_token": "fcm_token_here",
+  "platform": "android",
+  "device_id": "device_123"
+}
+```
 
-2. **Сервер отправляет в Telegram группу:**
-   - Форматирует сообщение с ID пользователя и текстом
-   - Прикрепляет фото если есть
-   - Сохраняет связь между `message_id` в группе и `user_id`
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Устройство зарегистрировано успешно",
+  "device_count": 1
+}
+```
 
-3. **Поддержка отвечает в группе:**
-   - Делает reply на сообщение пользователя
-   - Фоновый процесс обнаруживает reply
+### GET /message_history/<user_id>
+Получение истории переписки.
 
-4. **Пользователь получает push уведомление:**
-   - Сервер находит токены устройства пользователя
-   - Отправляет push через FCM (Android и iOS)
-   - Сохраняет ответ в историю переписки
+**Query параметры:**
+- `limit` (по умолчанию 50)
+- `user_name` (для приветственного сообщения)
 
-5. **Пользователь открывает уведомление:**
-   - Приложение открывает экран чата с поддержкой
-   - Загружается история переписки
+**Ответ:**
+```json
+{
+  "success": true,
+  "messages": [
+    {
+      "message": "Текст",
+      "photo_url": "/uploads/file.jpg",
+      "direction": "user",
+      "created_at": "2024-01-01 12:00:00"
+    }
+  ],
+  "greeting_sent": false
+}
+```
+
+### GET /health
+Проверка работоспособности.
+
+**Ответ:**
+```json
+{
+  "status": "ok"
+}
+```
+
+### GET /check_device/<user_id>
+Проверка регистрации устройства.
+
+**Ответ:**
+```json
+{
+  "user_id": "123456789",
+  "registered": true,
+  "device_count": 1,
+  "has_tokens": true
+}
+```
+
+### GET /uploads/<filename>
+Получение загруженных файлов.
+
+## WebSocket Events
+
+### Подключение
+```javascript
+socket.emit('join_chat', { user_id: 'user_123' });
+```
+
+### Отключение
+```javascript
+socket.emit('leave_chat', { user_id: 'user_123' });
+```
+
+### События
+- `new_message` - новое сообщение в чате
+- `joined` - подтверждение подключения
+- `error` - ошибка
+
+## Интеграция с Rust сервером
+
+### HTTP Proxy
+
+Rust сервер может проксировать запросы к этому серверу:
+
+```rust
+// Пример для actix-web
+async fn send_support_message(
+    req: web::Json<SupportMessage>,
+) -> Result<HttpResponse, Error> {
+    let client = reqwest::Client::new();
+    
+    let response = client
+        .post("http://localhost:5000/send_message")
+        .json(&req.into_inner())
+        .send()
+        .await?;
+    
+    Ok(HttpResponse::Ok().json(response.json().await?))
+}
+```
+
+### Прямое использование API
+
+Все endpoints доступны через HTTP. Rust сервер может:
+
+1. **Проксировать запросы** - принимать запросы от клиентов и пересылать на этот сервер
+2. **Использовать как микросервис** - вызывать API напрямую из Rust кода
+3. **WebSocket прокси** - проксировать WebSocket соединения
+
+### Пример интеграции
+
+```rust
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize)]
+struct SupportMessage {
+    user_id: String,
+    message: String,
+    user_name: Option<String>,
+}
+
+async fn forward_to_support_bot(
+    client: &Client,
+    message: SupportMessage,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let response = client
+        .post("http://localhost:5000/send_message")
+        .json(&message)
+        .send()
+        .await?;
+    
+    let result: serde_json::Value = response.json().await?;
+    println!("Support bot response: {:?}", result);
+    
+    Ok(())
+}
+```
+
+### WebSocket интеграция
+
+```rust
+use tokio_tungstenite::{connect_async, tungstenite::Message};
+
+async fn connect_support_websocket(user_id: &str) {
+    let url = "ws://localhost:5000/socket.io/?EIO=4&transport=websocket";
+    let (ws_stream, _) = connect_async(url).await.unwrap();
+    
+    // Отправка join_chat
+    let join_msg = serde_json::json!({
+        "event": "join_chat",
+        "data": {"user_id": user_id}
+    });
+    // ... обработка сообщений
+}
+```
 
 ## Структура проекта
 
 ```
 smile_ai_tg/
-├── venv/                    # Виртуальное окружение
-├── uploads/                   # Загруженные фото (создается автоматически)
-├── support_bot.db            # База данных SQLite (создается автоматически)
-├── config.py                 # Конфигурация
-├── bot.py                    # Логика работы с Telegram Bot API
-├── server.py                 # Flask сервер для приема запросов
-├── database.py               # Работа с базой данных
-├── push_notifications.py     # Отправка push уведомлений
-├── get_group_id.py           # Вспомогательный скрипт для получения ID группы
-├── requirements.txt          # Зависимости Python
-├── .env                      # Настройки (создается вручную)
-├── .env.example              # Пример файла настроек
-├── README.md                 # Документация
-└── FLUTTER_GUIDE.md          # API документация для мобильного приложения
+├── server.py              # Flask сервер
+├── bot.py                 # Telegram Bot API
+├── database.py            # SQLite база данных
+├── push_notifications.py  # FCM push уведомления
+├── config.py             # Конфигурация
+├── requirements.txt      # Зависимости
+├── .env                  # Настройки
+└── uploads/              # Загруженные файлы
 ```
-
-## Настройки
-
-Все настройки хранятся в файле `.env`:
-
-### Обязательные:
-- `BOT_TOKEN` - токен бота от @BotFather
-- `GROUP_CHAT_ID` - ID группы поддержки
-
-### Опциональные:
-- `SERVER_PORT` - порт для сервера (по умолчанию 5000)
-- `SERVER_HOST` - хост для сервера (по умолчанию 0.0.0.0)
-- `API_SECRET_KEY` - секретный ключ (для будущего использования)
-
-### Push уведомления:
-- `FCM_SERVER_KEY` - Server key из Firebase Console (для Android и iOS)
-
-### Файлы:
-- `UPLOAD_FOLDER` - директория для загрузки файлов (по умолчанию `uploads`)
 
 ## База данных
 
-Используется SQLite база данных `support_bot.db` с тремя таблицами:
+SQLite база `support_bot.db` с таблицами:
+- `messages` - история сообщений
+- `device_tokens` - FCM токены устройств
+- `message_mapping` - связь Telegram message_id с user_id
+- `greetings_sent` - отслеживание отправленных приветствий
 
-1. **messages** - история всех сообщений
-2. **device_tokens** - токены устройств для push уведомлений
-3. **message_mapping** - связь между сообщениями в Telegram и пользователями
+## Приветственное сообщение
 
-База создается автоматически при первом запуске.
+Приветственное сообщение отправляется автоматически:
+- При первом запросе истории за день
+- Только один раз в день для каждого пользователя
+- Формат: "Здравствуйте, {user_name}!" или "Здравствуйте!"
 
 ## Безопасность
 
-- Не коммитьте файл `.env` в git (он уже в `.gitignore`)
-- Для продакшена рекомендуется:
-  - Добавить аутентификацию для API
-  - Использовать HTTPS для защиты данных в транзите
-  - Добавить rate limiting
-  - Использовать PostgreSQL вместо SQLite для больших нагрузок
-  - Настроить резервное копирование базы данных
+- Не коммитьте `.env` и `firebase-service-account.json`
+- Для продакшена используйте HTTPS
+- Добавьте аутентификацию для API
+- Настройте rate limiting
 
 ## Troubleshooting
 
-**Бот не отправляет сообщения в группу:**
-- Проверьте, что бот добавлен в группу
-- Проверьте правильность `GROUP_CHAT_ID` (должен быть отрицательным числом для групп)
-- Убедитесь, что токен бота правильный
+**Бот не отправляет сообщения:**
+- Проверьте `BOT_TOKEN` и `GROUP_CHAT_ID`
+- Убедитесь, что бот добавлен в группу
 
-**Push уведомления не приходят:**
-- Проверьте, что токен устройства зарегистрирован (`POST /register_device`)
-- Убедитесь, что FCM_SERVER_KEY правильный
-- Проверьте логи сервера на наличие ошибок
+**Push не работают:**
+- Проверьте `firebase-service-account.json`
+- Убедитесь, что устройство зарегистрировано
+- Проверьте логи сервера
 
 **Фото не загружаются:**
-- Проверьте, что директория `uploads` существует и доступна для записи
-- Убедитесь, что размер файла не превышает 10MB
-- Проверьте формат файла (поддерживаются: png, jpg, jpeg, gif, webp)
-
-**Сервер не запускается:**
-- Проверьте, что виртуальное окружение активировано
-- Убедитесь, что все зависимости установлены
-- Проверьте, что порт не занят другим процессом
-
+- Проверьте права на директорию `uploads/`
+- Максимальный размер файла: 10MB
