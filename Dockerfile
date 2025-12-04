@@ -18,8 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем все файлы приложения
 COPY . .
 
-# Создаем директорию для загрузок и устанавливаем права доступа
-RUN mkdir -p uploads && \
+# Создаем директории и устанавливаем права доступа
+RUN mkdir -p uploads data && \
     chmod -R 777 /app
 
 # Открываем порт 5000 для вебхука
