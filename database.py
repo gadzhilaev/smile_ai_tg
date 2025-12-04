@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import os
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -9,7 +10,21 @@ logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self, db_path: str = "support_bot.db"):
-        self.db_path = db_path
+        # Если путь относительный, создаем директорию data если нужно
+        if not os.path.isabs(db_path) and "/" not in db_path:
+            # Проверяем, есть ли директория data, если нет - используем текущую директорию
+            if os.path.exists("data") and os.path.isdir("data"):
+                self.db_path = os.path.join("data", db_path)
+            else:
+                self.db_path = db_path
+        else:
+            self.db_path = db_path
+        
+        # Создаем директорию для базы данных, если нужно
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+        
         self.init_database()
     
     def get_connection(self):

@@ -18,8 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем все файлы приложения
 COPY . .
 
-# Создаем директорию для загрузок, если её нет
-RUN mkdir -p uploads
+# Создаем директорию для загрузок и устанавливаем права доступа
+RUN mkdir -p uploads && \
+    chmod -R 777 /app
 
 # Открываем порт 5000 для вебхука
 EXPOSE 5000
