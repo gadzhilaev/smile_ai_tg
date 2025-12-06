@@ -37,5 +37,5 @@ uploads/
 *.json
 !package.json
 !tsconfig.json
-!firebase-service-account.json
+firebase-service-account.json
 
