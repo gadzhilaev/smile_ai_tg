@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Database (будет создана в контейнере)
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads (будут созданы в контейнере)
+uploads/*
+!uploads/.gitkeep
+
+# Environment
+.env
+.env.local
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Documentation
+README.md
+*.md
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+

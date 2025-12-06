@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import os
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -9,13 +10,65 @@ logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self, db_path: str = "support_bot.db"):
-        self.db_path = db_path
+        # Проверяем, существует ли директория data
+        if os.path.exists("data") and os.path.isdir("data"):
+            # Используем директорию data для базы данных
+            self.db_path = os.path.join("data", os.path.basename(db_path))
+        else:
+            # Используем текущую директорию
+            self.db_path = os.path.join(os.getcwd(), os.path.basename(db_path))
+        
+        # Создаем директорию для базы данных, если нужно
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir and not os.path.exists(db_dir):
+            try:
+                os.makedirs(db_dir, mode=0o777, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Не удалось создать директорию {db_dir}: {e}")
+                # Fallback: используем текущую директорию
+                self.db_path = os.path.join(os.getcwd(), os.path.basename(db_path))
+        
+        # Убеждаемся, что директория имеет права на запись
+        try:
+            db_dir = os.path.dirname(self.db_path)
+            if os.path.exists(db_dir):
+                os.chmod(db_dir, 0o777)
+        except Exception as e:
+            logger.warning(f"Не удалось установить права на директорию {db_dir}: {e}")
+        
+        logger.info(f"Используется база данных: {self.db_path}")
         self.init_database()
     
     def get_connection(self):
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            # Проверяем, что директория существует и доступна для записи
+            db_dir = os.path.dirname(self.db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir, mode=0o777, exist_ok=True)
+            
+            # Проверяем права на запись в директорию
+            if db_dir and os.path.exists(db_dir):
+                test_file = os.path.join(db_dir, '.test_write')
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                except Exception as e:
+                    logger.error(f"Нет прав на запись в директорию {db_dir}: {e}")
+                    # Пытаемся установить права
+                    try:
+                        os.chmod(db_dir, 0o777)
+                    except:
+                        pass
+            
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            return conn
+        except sqlite3.OperationalError as e:
+            logger.error(f"Ошибка подключения к базе данных {self.db_path}: {e}")
+            logger.error(f"Текущая рабочая директория: {os.getcwd()}")
+            logger.error(f"Права на директорию: {oct(os.stat(db_dir).st_mode) if db_dir and os.path.exists(db_dir) else 'N/A'}")
+            raise
     
     def init_database(self):
         try:
