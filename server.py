@@ -11,8 +11,10 @@ from werkzeug.utils import secure_filename
 from bot import TelegramBot
 from database import Database
 from push_notifications import PushNotificationService
+from openrouter_ai import OpenRouterAI
 from config import (SERVER_PORT, SERVER_HOST, API_SECRET_KEY, 
-                   UPLOAD_FOLDER, ALLOWED_EXTENSIONS, MAX_FILE_SIZE)
+                   UPLOAD_FOLDER, ALLOWED_EXTENSIONS, MAX_FILE_SIZE,
+                   HUMAN_SUPPORT_TIMEOUT_MINUTES)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +26,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 bot = TelegramBot()
 db = Database()
 push_service = PushNotificationService()
+ai_service = OpenRouterAI()
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 active_connections = {}
@@ -170,55 +173,179 @@ def send_message():
                     os.remove(path)
             return jsonify({"error": "Отсутствуют обязательные поля: user_id или message"}), 400
         
-        if len(photo_paths) > 1:
-            result = bot.send_media_group_to_group(
-                user_id=user_id,
-                user_name=user_name,
-                message_text=message_text,
-                photo_paths=photo_paths
-            )
-        else:
-            result = bot.send_message_to_group(
-                user_id=user_id,
-                user_name=user_name,
-                message_text=message_text,
-                photo_path=photo_path
-            )
+        # Update last user message time
+        db.update_last_user_message_time(user_id)
         
-        if result:
-            telegram_message_id = result.get("group_message_id")
-            photo_url_for_db = photo_url if len(photo_urls) <= 1 else json.dumps(photo_urls)
+        # Check if user should be reset to AI mode due to inactivity
+        if db.should_reset_to_ai_mode(user_id, HUMAN_SUPPORT_TIMEOUT_MINUTES):
+            db.set_user_support_mode(user_id, "ai")
+            logger.info(f"Пользователь {user_id} автоматически переключен на AI режим из-за неактивности")
+        
+        # Get current support mode
+        support_mode = db.get_user_support_mode(user_id)
+        
+        # Save user message to database first
+        photo_url_for_db = photo_url if len(photo_urls) <= 1 else json.dumps(photo_urls)
+        db.save_message(
+            user_id=user_id,
+            message_text=message_text,
+            photo_url=photo_url_for_db,
+            direction="user",
+            telegram_message_id=None
+        )
+        
+        # Emit user message to WebSocket
+        if user_id in active_connections:
+            socketio.emit('new_message', {
+                'user_id': user_id,
+                'message': message_text,
+                'photo_url': photo_url if len(photo_urls) <= 1 else photo_urls,
+                'direction': 'user',
+                'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
+            }, room=user_id)
+        
+        # Check if user is requesting human support
+        requesting_human = ai_service.is_human_support_requested(message_text)
+        
+        if support_mode == "ai" and not requesting_human:
+            # AI mode - get AI response
+            conversation_history = db.get_message_history(user_id, limit=20)
+            ai_response = ai_service.get_ai_response(message_text, conversation_history)
             
+            if ai_response:
+                # Check if AI itself suggests transferring to human
+                if ai_service.is_human_support_requested(ai_response):
+                    # AI suggested human support, switch mode
+                    db.set_user_support_mode(user_id, "human")
+                    support_mode = "human"
+                else:
+                    # Save AI response and send to user
+                    db.save_message(
+                        user_id=user_id,
+                        message_text=ai_response,
+                        photo_url=None,
+                        direction="support",
+                        telegram_message_id=None
+                    )
+                    
+                    # Emit AI response to WebSocket
+                    if user_id in active_connections:
+                        socketio.emit('new_message', {
+                            'user_id': user_id,
+                            'message': ai_response,
+                            'direction': 'support',
+                            'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                        }, room=user_id)
+                    
+                    # Send push notification
+                    tokens = db.get_device_tokens(user_id)
+                    if tokens:
+                        push_data = {
+                            "type": "support_reply",
+                            "user_id": user_id,
+                            "message": ai_response
+                        }
+                        push_service.send_notification(
+                            tokens=tokens,
+                            title="Ответ от поддержки",
+                            body=ai_response,
+                            data=push_data
+                        )
+                    
+                    return jsonify({
+                        "success": True,
+                        "mode": "ai",
+                        "photo_url": photo_url if len(photo_urls) <= 1 else photo_urls,
+                        "photo_count": len(photo_urls)
+                    }), 200
+            else:
+                # AI unavailable, switch to human mode
+                db.set_user_support_mode(user_id, "human")
+                support_mode = "human"
+                
+                # Send unavailability message
+                unavailable_msg = ai_service.get_ai_unavailable_message()
+                db.save_message(
+                    user_id=user_id,
+                    message_text=unavailable_msg,
+                    photo_url=None,
+                    direction="support",
+                    telegram_message_id=None
+                )
+                
+                if user_id in active_connections:
+                    socketio.emit('new_message', {
+                        'user_id': user_id,
+                        'message': unavailable_msg,
+                        'direction': 'support',
+                        'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
+                    }, room=user_id)
+        
+        # User requested human support while in AI mode
+        if support_mode == "ai" and requesting_human:
+            db.set_user_support_mode(user_id, "human")
+            support_mode = "human"
+            
+            # Send transfer message
+            transfer_msg = ai_service.get_human_transfer_message()
             db.save_message(
                 user_id=user_id,
-                message_text=message_text,
-                photo_url=photo_url_for_db,
-                direction="user",
-                telegram_message_id=telegram_message_id
+                message_text=transfer_msg,
+                photo_url=None,
+                direction="support",
+                telegram_message_id=None
             )
-            
-            db.save_message_mapping(user_id, telegram_message_id)
             
             if user_id in active_connections:
                 socketio.emit('new_message', {
                     'user_id': user_id,
-                    'message': message_text,
-                    'photo_url': photo_url if len(photo_urls) <= 1 else photo_urls,
-                    'direction': 'user',
+                    'message': transfer_msg,
+                    'direction': 'support',
                     'created_at': time.strftime('%Y-%m-%d %H:%M:%S')
                 }, room=user_id)
+        
+        # Human support mode - forward to Telegram group
+        if support_mode == "human":
+            if len(photo_paths) > 1:
+                result = bot.send_media_group_to_group(
+                    user_id=user_id,
+                    user_name=user_name,
+                    message_text=message_text,
+                    photo_paths=photo_paths
+                )
+            else:
+                result = bot.send_message_to_group(
+                    user_id=user_id,
+                    user_name=user_name,
+                    message_text=message_text,
+                    photo_path=photo_path
+                )
             
-            return jsonify({
-                "success": True,
-                "message_id": result.get("message_id"),
-                "photo_url": photo_url if len(photo_urls) <= 1 else photo_urls,
-                "photo_count": len(photo_urls)
-            }), 200
-        else:
-            for path in photo_paths:
-                if os.path.exists(path):
-                    os.remove(path)
-            return jsonify({"error": "Не удалось отправить сообщение в группу"}), 500
+            if result:
+                telegram_message_id = result.get("group_message_id")
+                
+                # Update message with telegram_message_id
+                db.save_message_mapping(user_id, telegram_message_id)
+                
+                return jsonify({
+                    "success": True,
+                    "mode": "human",
+                    "message_id": result.get("message_id"),
+                    "photo_url": photo_url if len(photo_urls) <= 1 else photo_urls,
+                    "photo_count": len(photo_urls)
+                }), 200
+            else:
+                for path in photo_paths:
+                    if os.path.exists(path):
+                        os.remove(path)
+                return jsonify({"error": "Не удалось отправить сообщение в группу"}), 500
+        
+        return jsonify({
+            "success": True,
+            "mode": support_mode,
+            "photo_url": photo_url if len(photo_urls) <= 1 else photo_urls,
+            "photo_count": len(photo_urls)
+        }), 200
             
     except Exception as e:
         logger.error(f"Ошибка при обработке запроса: {e}")
@@ -343,6 +470,50 @@ def check_device(user_id):
         }), 200
     except Exception as e:
         logger.error(f"Ошибка при проверке устройства: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/support_mode/<user_id>', methods=['GET'])
+def get_support_mode(user_id):
+    """Get current support mode for user"""
+    try:
+        # Check for inactivity reset
+        if db.should_reset_to_ai_mode(user_id, HUMAN_SUPPORT_TIMEOUT_MINUTES):
+            db.set_user_support_mode(user_id, "ai")
+            logger.info(f"Пользователь {user_id} автоматически переключен на AI режим из-за неактивности")
+        
+        mode = db.get_user_support_mode(user_id)
+        return jsonify({
+            "success": True,
+            "user_id": user_id,
+            "mode": mode
+        }), 200
+    except Exception as e:
+        logger.error(f"Ошибка при получении режима поддержки: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/support_mode/<user_id>', methods=['POST'])
+def set_support_mode(user_id):
+    """Manually set support mode for user"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Отсутствуют данные"}), 400
+        
+        mode = data.get("mode")
+        if mode not in ["ai", "human"]:
+            return jsonify({"error": "mode должен быть 'ai' или 'human'"}), 400
+        
+        db.set_user_support_mode(user_id, mode)
+        
+        return jsonify({
+            "success": True,
+            "user_id": user_id,
+            "mode": mode
+        }), 200
+    except Exception as e:
+        logger.error(f"Ошибка при установке режима поддержки: {e}")
         return jsonify({"error": str(e)}), 500
 
 
