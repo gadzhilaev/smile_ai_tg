@@ -14,3 +14,11 @@ UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
+# OpenRouter AI Configuration
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '')
+OPENROUTER_MODEL = os.getenv('OPENROUTER_MODEL', 'openai/gpt-3.5-turbo')
+OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+
+# Support mode settings
+HUMAN_SUPPORT_TIMEOUT_MINUTES = 5  # Time of inactivity before switching back to AI
+

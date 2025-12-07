@@ -120,6 +120,17 @@ class Database:
                 )
             ''')
             
+            # Table for tracking user support mode (AI or human)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_support_mode (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL UNIQUE,
+                    mode TEXT NOT NULL DEFAULT 'ai',
+                    last_user_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    switched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
             conn.commit()
             conn.close()
             logger.info("База данных инициализирована успешно")
@@ -345,4 +356,109 @@ class Database:
         except Exception as e:
             logger.error(f"Ошибка при сохранении отметки о приветствии: {e}")
             raise
+    
+    def get_user_support_mode(self, user_id: str) -> str:
+        """Get current support mode for user ('ai' or 'human')"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT mode FROM user_support_mode
+                WHERE user_id = ?
+            ''', (user_id,))
+            
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row:
+                return row["mode"]
+            return "ai"  # Default to AI mode
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении режима поддержки: {e}")
+            return "ai"
+    
+    def set_user_support_mode(self, user_id: str, mode: str):
+        """Set support mode for user ('ai' or 'human')"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO user_support_mode (user_id, mode, switched_at, last_user_message_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET 
+                    mode = excluded.mode,
+                    switched_at = CURRENT_TIMESTAMP
+            ''', (user_id, mode))
+            
+            conn.commit()
+            conn.close()
+            logger.info(f"Режим поддержки для пользователя {user_id} установлен на: {mode}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при установке режима поддержки: {e}")
+            raise
+    
+    def update_last_user_message_time(self, user_id: str):
+        """Update the last user message timestamp"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                INSERT INTO user_support_mode (user_id, mode, last_user_message_at)
+                VALUES (?, 'ai', CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id) DO UPDATE SET 
+                    last_user_message_at = CURRENT_TIMESTAMP
+            ''', (user_id,))
+            
+            conn.commit()
+            conn.close()
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении времени последнего сообщения: {e}")
+    
+    def get_last_user_message_time(self, user_id: str) -> Optional[datetime]:
+        """Get the last user message timestamp"""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT last_user_message_at FROM user_support_mode
+                WHERE user_id = ?
+            ''', (user_id,))
+            
+            row = cursor.fetchone()
+            conn.close()
+            
+            if row and row["last_user_message_at"]:
+                return datetime.strptime(row["last_user_message_at"], '%Y-%m-%d %H:%M:%S')
+            return None
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении времени последнего сообщения: {e}")
+            return None
+    
+    def should_reset_to_ai_mode(self, user_id: str, timeout_minutes: int = 5) -> bool:
+        """Check if user should be reset to AI mode due to inactivity"""
+        try:
+            mode = self.get_user_support_mode(user_id)
+            if mode != "human":
+                return False
+            
+            last_message_time = self.get_last_user_message_time(user_id)
+            if not last_message_time:
+                return False
+            
+            now = datetime.now()
+            time_diff = (now - last_message_time).total_seconds() / 60
+            
+            return time_diff >= timeout_minutes
+            
+        except Exception as e:
+            logger.error(f"Ошибка при проверке сброса режима: {e}")
+            return False
 
